@@ -1,0 +1,42 @@
+hash: e98af85658cf50d6a643aa56b42091ee40250a202f17779837f3a7d58176d86a
+updated: 2017-09-13T19:38:29.751168635+01:00
+imports:
+- name: github.com/armon/go-metrics
+  version: f036747b9d0e8590f175a5d654a2194a7d9df4b5
+- name: github.com/go-kit/kit
+  version: d67bb4c202e3b91377d1079b110a6c9ce23ab2f8
+  subpackages:
+  - log
+  - log/level
+- name: github.com/go-logfmt/logfmt
+  version: 390ab7935ee28ec6b286364bba9b4dd6410cb3d5
+- name: github.com/go-stack/stack
+  version: 7a2f19628aabfe68f0766b59e74d6315f8347d22
+- name: github.com/hashicorp/errwrap
+  version: 7554cd9344cec97297fa6649b055a8c98c2a1e55
+- name: github.com/hashicorp/go-msgpack
+  version: fa3f63826f7c23912c15263591e65d54d080b458
+  subpackages:
+  - codec
+- name: github.com/hashicorp/go-multierror
+  version: 83588e72410abfbe4df460eeb6f30841ae47d4c4
+- name: github.com/hashicorp/go-sockaddr
+  version: 41949a141473f6340abc6ba0fcd0f89da6f6f837
+- name: github.com/hashicorp/memberlist
+  version: d6c1fb0b99c33d0a8e22acea9da9709b369b5d39
+- name: github.com/hashicorp/serf
+  version: 555c6fa2a11d1f8e08ac9964015e864a3f61e7c3
+  subpackages:
+  - coordinate
+  - serf
+- name: github.com/kr/logfmt
+  version: b84e30acd515aadc4b783ad4ff83aff3299bdfe0
+- name: github.com/miekg/dns
+  version: e4205768578dc90c2669e75a2f8a8bf77e3083a4
+- name: github.com/pkg/errors
+  version: c605e284fe17294bda444b34710735b29d1a9d90
+- name: github.com/sean-/seed
+  version: e2103e2c35297fb7e17febb81e49b312087a2372
+- name: github.com/SimonRichardson/gexec
+  version: 51d581347cd0cbd0df9c2787c91af8a16af0d74e
+testImports: []

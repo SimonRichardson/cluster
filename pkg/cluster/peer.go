@@ -1,13 +1,11 @@
 package cluster
 
 import (
-	"io/ioutil"
 	"net"
 	"strconv"
 	"time"
 
 	"github.com/SimonRichardson/cluster/pkg/members"
-	"github.com/SimonRichardson/cluster/pkg/uuid"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
@@ -50,37 +48,10 @@ type Peer struct {
 // We will listen for cluster communications on the bind addr:port.
 // We advertise a PeerType HTTP API, reachable on apiPort.
 func NewPeer(
-	bindAddr string, bindPort int,
-	advertiseAddr string, advertisePort int,
-	existing []string,
-	peerType members.PeerType,
-	apiPort int,
+	members members.Members,
 	logger log.Logger,
 ) (*Peer, error) {
-	level.Debug(logger).Log("bind_addr", bindAddr, "bind_port", bindPort, "ParseIP", net.ParseIP(bindAddr).String())
-
-	name, err := uuid.New()
-	if err != nil {
-		return nil, err
-	}
-
-	config := members.Config{
-		PeerType:         peerType,
-		NodeName:         name.String(),
-		BindAddr:         bindAddr,
-		BindPort:         bindPort,
-		AdvertiseAddr:    advertiseAddr,
-		AdvertisePort:    advertisePort,
-		LogOutput:        ioutil.Discard,
-		BroadcastTimeout: defaultBroadcastTimeout,
-	}
-
-	m, err := members.New(config)
-	if err != nil {
-		return nil, err
-	}
-
-	numNodes, err := m.Join(existing, true)
+	numNodes, err := m.Join()
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +59,7 @@ func NewPeer(
 	level.Debug(logger).Log("joined", numNodes)
 
 	peer := &Peer{
-		members: m,
+		members: members,
 		stop:    make(chan chan struct{}),
 		logger:  logger,
 	}

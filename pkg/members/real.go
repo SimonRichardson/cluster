@@ -8,6 +8,7 @@ import (
 )
 
 type realMembers struct {
+	config  Config
 	members *serf.Serf
 	logger  log.Logger
 }
@@ -24,11 +25,11 @@ func New(config Config, logger log.Logger) (Members, error) {
 		return nil, err
 	}
 
-	return &realMembers{members, logger}, nil
+	return &realMembers{config, members, logger}, nil
 }
 
-func (r *realMembers) Join(existing []string) (int, error) {
-	return r.members.Join(existing, true)
+func (r *realMembers) Join() (int, error) {
+	return r.members.Join(r.config.Existing, true)
 }
 
 func (r *realMembers) Leave() error {

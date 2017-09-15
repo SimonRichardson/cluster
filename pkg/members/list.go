@@ -13,24 +13,44 @@ type Config struct {
 	BindPort         int
 	AdvertiseAddr    string
 	AdvertisePort    string
-	LogOuput         io.Writer
+	LogOutput        io.Writer
 	BroadcastTimeout time.Duration
 	Tags             map[string]string
 }
 
 type List interface {
+	// Create creates a new members instance, starting all the background tasks
+	// to maintain cluster membership information.
 	Create(Config) (Members, error)
 }
 
 type Members interface {
+	// Join joins an existing members cluster. Returns the number of nodes
+	// successfully contacted. The returned error will be non-nil only in the
+	// case that no nodes could be contacted. If ignoreOld is true, then any
+	// user messages sent prior to the join will be ignored.
 	Join([]string)
-	List() MembersList
+
+	// Memberlist is used to get access to the underlying Memberlist instance
+	MemberList() MemberList
 }
 
-type MembersList interface {
+type MemberList interface {
+
+	// NumMembers returns the number of alive nodes currently known. Between
+	// the time of calling this and calling Members, the number of alive nodes
+	// may have changed, so this shouldn't be used to determine how many
+	// members will be returned by Members.
 	NumMembers() int
+
+	// Leave gracefully exits the cluster. It is safe to call this multiple
+	// times.
 	Leave() error
+
+	// LocalNode is used to return the local Node
 	LocalNode() Node
+
+	// Members returns a point-in-time snapshot of the members of this cluster.
 	Members() []Node
 }
 

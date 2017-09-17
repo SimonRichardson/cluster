@@ -1,8 +1,8 @@
 package members
 
 import (
-	"github.com/SimonRichardson/cluster/pkg/uuid"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/serf/serf"
 )
@@ -13,14 +13,9 @@ type realMembers struct {
 	logger  log.Logger
 }
 
-// New creates a new members list to join.
-func New(config Config, logger log.Logger) (Members, error) {
-	c, err := transformConfig(config)
-	if err != nil {
-		return nil, err
-	}
-
-	members, err := serf.Create(c)
+// NewRealMembers creates a new members list to join.
+func NewRealMembers(config Config, logger log.Logger) (Members, error) {
+	members, err := serf.Create(transformConfig(config))
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +24,7 @@ func New(config Config, logger log.Logger) (Members, error) {
 }
 
 func (r *realMembers) Join() (int, error) {
-	return r.members.Join(r.config.Existing, true)
+	return r.members.Join(r.config.existing, true)
 }
 
 func (r *realMembers) Leave() error {
@@ -56,6 +51,13 @@ func (r *realMembers) Walk(fn func(PeerInfo) error) error {
 		}
 	}
 	return nil
+}
+
+func (r *realMembers) Close() error {
+	if err := r.members.Leave(); err != nil {
+		level.Warn(r.logger).Log("err", err)
+	}
+	return r.members.Shutdown()
 }
 
 type realMemberList struct {
@@ -88,32 +90,23 @@ func (r *realMember) Name() string {
 	return r.member.Name
 }
 
-func (r *realMember) Status() serf.MemberStatus {
-	return 0
-}
-
-func transformConfig(config Config) (*serf.Config, error) {
+func transformConfig(config Config) *serf.Config {
 	c := serf.DefaultConfig()
 
-	name, err := uuid.New()
-	if err != nil {
-		return nil, err
+	c.NodeName = config.nodeName
+	c.MemberlistConfig.BindAddr = config.bindAddr
+	c.MemberlistConfig.BindPort = config.bindPort
+	if config.advertiseAddr != "" {
+		c.MemberlistConfig.AdvertiseAddr = config.advertiseAddr
+		c.MemberlistConfig.AdvertisePort = config.advertisePort
 	}
-
-	c.NodeName = name.String()
-	c.MemberlistConfig.BindAddr = config.BindAddr
-	c.MemberlistConfig.BindPort = config.BindPort
-	if config.AdvertiseAddr != "" {
-		c.MemberlistConfig.AdvertiseAddr = config.AdvertiseAddr
-		c.MemberlistConfig.AdvertisePort = config.AdvertisePort
-	}
-	c.LogOutput = config.LogOutput
-	c.BroadcastTimeout = config.BroadcastTimeout
+	c.LogOutput = config.logOutput
+	c.BroadcastTimeout = config.broadcastTimeout
 	c.Tags = encodePeerInfoTag(PeerInfo{
-		Type:    config.PeerType,
-		APIAddr: config.BindAddr,
-		APIPort: config.BindPort,
+		Type:    config.peerType,
+		APIAddr: config.bindAddr,
+		APIPort: config.bindPort,
 	})
 
-	return c, nil
+	return c
 }

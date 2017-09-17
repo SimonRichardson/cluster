@@ -34,7 +34,6 @@ func ParsePeerType(t string) (members.PeerType, error) {
 	default:
 		return "", errors.Errorf("invalid peer type (%s)", t)
 	}
-
 }
 
 // Peer represents the node with in the cluster.
@@ -51,7 +50,7 @@ func NewPeer(
 	members members.Members,
 	logger log.Logger,
 ) (*Peer, error) {
-	numNodes, err := m.Join()
+	numNodes, err := members.Join()
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +121,8 @@ func (p *Peer) State() map[string]interface{} {
 }
 
 // Current API host:ports for the given type of node.
-func (p *Peer) Current(peerType PeerType) (res []string, err error) {
-	err = p.members.Walk(func(info members.PeerInfo) {
+func (p *Peer) Current(peerType members.PeerType) (res []string, err error) {
+	err = p.members.Walk(func(info members.PeerInfo) error {
 		var (
 			matchIngest = peerType == PeerTypeIngest && info.Type == PeerTypeIngest
 			matchStore  = peerType == PeerTypeStore && info.Type == PeerTypeStore
@@ -131,5 +130,7 @@ func (p *Peer) Current(peerType PeerType) (res []string, err error) {
 		if matchIngest || matchStore {
 			res = append(res, net.JoinHostPort(info.APIAddr, strconv.Itoa(info.APIPort)))
 		}
+		return nil
 	})
+	return
 }

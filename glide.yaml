@@ -8,3 +8,4 @@ import:
   - package: github.com/hashicorp/go-sockaddr
   - package: github.com/hashicorp/memberlist
   - package: github.com/hashicorp/serf
+  - package: github.com/golang/mock/gomock

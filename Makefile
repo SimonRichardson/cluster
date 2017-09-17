@@ -24,3 +24,7 @@ clean-mocks: FORCE
 	rm -f pkg/members/mocks/members.go
 
 FORCE:
+
+.PHONY: integration-tests
+integration-tests:
+	docker-compose run cluster go test -v -tags=integration ./cmd/... ./pkg/...

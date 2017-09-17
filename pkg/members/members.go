@@ -5,12 +5,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hashicorp/serf/serf"
 	"github.com/pkg/errors"
 )
 
 // PeerType describes the type of peer with in the cluster.
 type PeerType string
+
+func (p PeerType) String() string {
+	return string(p)
+}
 
 // Members represents a way of joining a members cluster
 type Members interface {
@@ -29,6 +32,9 @@ type Members interface {
 
 	// Walk over a set of alive members
 	Walk(func(PeerInfo) error) error
+
+	// Close the current members cluster
+	Close() error
 }
 
 // MemberList represents a way to manage members with in a cluster
@@ -52,23 +58,20 @@ type Member interface {
 
 	// Name returns the name of the member
 	Name() string
-
-	// Status is the state that a member is in.
-	Status() serf.MemberStatus
 }
 
 // Config defines a configuration setup for creating a list to manage the
 // members cluster
 type Config struct {
-	PeerType         PeerType
-	NodeName         string
-	BindAddr         string
-	BindPort         int
-	AdvertiseAddr    string
-	AdvertisePort    int
-	Existing         []string
-	LogOutput        io.Writer
-	BroadcastTimeout time.Duration
+	peerType         PeerType
+	nodeName         string
+	bindAddr         string
+	bindPort         int
+	advertiseAddr    string
+	advertisePort    int
+	existing         []string
+	logOutput        io.Writer
+	broadcastTimeout time.Duration
 }
 
 // Option defines a option for generating a filesystem Config
@@ -76,21 +79,21 @@ type Option func(*Config) error
 
 // Build ingests configuration options to then yield a Config and return an
 // error if it fails during setup.
-func Build(opts ...Option) (*Config, error) {
+func Build(opts ...Option) (Config, error) {
 	var config Config
 	for _, opt := range opts {
 		err := opt(&config)
 		if err != nil {
-			return nil, err
+			return Config{}, err
 		}
 	}
-	return &config, nil
+	return config, nil
 }
 
 // WithPeerType adds a PeerType to the configuration
 func WithPeerType(peerType PeerType) Option {
 	return func(config *Config) error {
-		config.PeerType = peerType
+		config.peerType = peerType
 		return nil
 	}
 }
@@ -98,7 +101,7 @@ func WithPeerType(peerType PeerType) Option {
 // WithNodeName adds a NodeName to the configuration
 func WithNodeName(nodeName string) Option {
 	return func(config *Config) error {
-		config.NodeName = nodeName
+		config.nodeName = nodeName
 		return nil
 	}
 }
@@ -106,8 +109,8 @@ func WithNodeName(nodeName string) Option {
 // WithBindAddrPort adds a BindAddr and BindPort to the configuration
 func WithBindAddrPort(addr string, port int) Option {
 	return func(config *Config) error {
-		config.BindAddr = addr
-		config.BindPort = port
+		config.bindAddr = addr
+		config.bindPort = port
 		return nil
 	}
 }
@@ -115,8 +118,8 @@ func WithBindAddrPort(addr string, port int) Option {
 // WithAdvertiseAddrPort adds a AdvertiseAddr and AdvertisePort to the configuration
 func WithAdvertiseAddrPort(addr string, port int) Option {
 	return func(config *Config) error {
-		config.AdvertiseAddr = addr
-		config.AdvertisePort = port
+		config.advertiseAddr = addr
+		config.advertisePort = port
 		return nil
 	}
 }
@@ -124,7 +127,7 @@ func WithAdvertiseAddrPort(addr string, port int) Option {
 // WithExisting adds a Existing to the configuration
 func WithExisting(existing []string) Option {
 	return func(config *Config) error {
-		config.Existing = existing
+		config.existing = existing
 		return nil
 	}
 }
@@ -132,7 +135,7 @@ func WithExisting(existing []string) Option {
 // WithLogOutput adds a LogOutput to the configuration
 func WithLogOutput(logOutput io.Writer) Option {
 	return func(config *Config) error {
-		config.LogOutput = logOutput
+		config.logOutput = logOutput
 		return nil
 	}
 }
@@ -140,7 +143,7 @@ func WithLogOutput(logOutput io.Writer) Option {
 // WithBroadcastTimeout adds a BroadcastTimeout to the configuration
 func WithBroadcastTimeout(d time.Duration) Option {
 	return func(config *Config) error {
-		config.BroadcastTimeout = d
+		config.broadcastTimeout = d
 		return nil
 	}
 }

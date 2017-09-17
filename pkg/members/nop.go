@@ -4,9 +4,7 @@ type nopMembers struct {
 }
 
 // NewNopMembers creates a new members list to join.
-func NewNopMembers() (Members, error) {
-	return nopMembers{}, nil
-}
+func NewNopMembers() Members { return nopMembers{} }
 
 func (r nopMembers) Join() (int, error)                 { return 0, nil }
 func (r nopMembers) Leave() error                       { return nil }

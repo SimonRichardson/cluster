@@ -52,18 +52,23 @@ func MustNew() UUID {
 // Parse attempts to parse an id and return a UUID, or returns an error on
 // failure.
 func Parse(id string) (UUID, error) {
-	bytes := []byte(id)
-	if len(bytes) != 36 {
+	return ParseBytes([]byte(id))
+}
+
+// ParseBytes attempts to parse an id and return a UUID, or returns an error on
+// failure.
+func ParseBytes(b []byte) (UUID, error) {
+	if len(b) != 36 {
 		return Empty, errors.New("error invalid length")
 	}
 
-	if !layout.Match(bytes[:]) {
+	if !layout.Match(b[:]) {
 		return Empty, errors.New("error invalid layout")
 	}
 
 	res := [36]byte{}
 	for i := 0; i < 36; i++ {
-		res[i] = bytes[i]
+		res[i] = b[i]
 	}
 	return UUID(res), nil
 }

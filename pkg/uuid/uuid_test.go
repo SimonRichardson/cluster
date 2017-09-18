@@ -176,4 +176,21 @@ func TestUUID(t *testing.T) {
 			t.Error(err)
 		}
 	})
+
+	t.Run("zero", func(t *testing.T) {
+		if expected, actual := true, Empty.Zero(); expected != actual {
+			t.Errorf("expected: %t, actual: %t", expected, actual)
+		}
+	})
+
+	t.Run("zero string", func(t *testing.T) {
+		id, err := Parse(Empty.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if expected, actual := true, id.Zero(); expected != actual {
+			t.Errorf("expected: %t, actual: %t", expected, actual)
+		}
+	})
 }

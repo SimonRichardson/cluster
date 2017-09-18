@@ -15,8 +15,19 @@ var (
 	// Empty UUID is a UUID that is considered empty.
 	Empty = UUID([36]byte{})
 
-	emptyUUID = "00000000-0000-0000-0000-000000000000"
-	layout    = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+	emptyUUID      = "00000000-0000-0000-0000-000000000000"
+	emptyUUIDBytes = []byte{
+		48, 48, 48, 48, 48, 48, 48, 48,
+		45,
+		48, 48, 48, 48,
+		45,
+		48, 48, 48, 48,
+		45,
+		48, 48, 48, 48,
+		45,
+		48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48,
+	}
+	layout = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 	rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
@@ -79,7 +90,17 @@ func (u UUID) Zero() bool {
 			amount++
 		}
 	}
-	return amount == 36
+	if amount == 36 {
+		return true
+	}
+
+	// Validate string
+	for k, v := range u {
+		if v != emptyUUIDBytes[k] {
+			return false
+		}
+	}
+	return true
 }
 
 func (u UUID) String() string {

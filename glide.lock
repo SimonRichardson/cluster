@@ -1,5 +1,5 @@
-hash: e98af85658cf50d6a643aa56b42091ee40250a202f17779837f3a7d58176d86a
-updated: 2017-09-13T19:38:29.751168635+01:00
+hash: b37d8c7434f90ab3fece3abe0f5cf0b3c6c2ba124826071997bed660638ca4ba
+updated: 2017-09-17T17:01:44.980847515+01:00
 imports:
 - name: github.com/armon/go-metrics
   version: f036747b9d0e8590f175a5d654a2194a7d9df4b5
@@ -12,6 +12,10 @@ imports:
   version: 390ab7935ee28ec6b286364bba9b4dd6410cb3d5
 - name: github.com/go-stack/stack
   version: 7a2f19628aabfe68f0766b59e74d6315f8347d22
+- name: github.com/golang/mock
+  version: 13f360950a79f5864a972c786a10a50e44b69541
+  subpackages:
+  - gomock
 - name: github.com/hashicorp/errwrap
   version: 7554cd9344cec97297fa6649b055a8c98c2a1e55
 - name: github.com/hashicorp/go-msgpack

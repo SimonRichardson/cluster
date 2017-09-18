@@ -5,8 +5,8 @@ package mocks
 
 import (
 	members "github.com/SimonRichardson/cluster/pkg/members"
-	serf "github.com/hashicorp/serf/serf"
 	gomock "github.com/golang/mock/gomock"
+	reflect "reflect"
 )
 
 // MockMembers is a mock of Members interface
@@ -32,6 +32,18 @@ func (_m *MockMembers) EXPECT() *MockMembersMockRecorder {
 	return _m.recorder
 }
 
+// Close mocks base method
+func (_m *MockMembers) Close() error {
+	ret := _m.ctrl.Call(_m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close
+func (_mr *MockMembersMockRecorder) Close() *gomock.Call {
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Close", reflect.TypeOf((*MockMembers)(nil).Close))
+}
+
 // Join mocks base method
 func (_m *MockMembers) Join() (int, error) {
 	ret := _m.ctrl.Call(_m, "Join")
@@ -42,7 +54,7 @@ func (_m *MockMembers) Join() (int, error) {
 
 // Join indicates an expected call of Join
 func (_mr *MockMembersMockRecorder) Join() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Join")
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Join", reflect.TypeOf((*MockMembers)(nil).Join))
 }
 
 // Leave mocks base method
@@ -54,7 +66,7 @@ func (_m *MockMembers) Leave() error {
 
 // Leave indicates an expected call of Leave
 func (_mr *MockMembersMockRecorder) Leave() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Leave")
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Leave", reflect.TypeOf((*MockMembers)(nil).Leave))
 }
 
 // MemberList mocks base method
@@ -66,7 +78,7 @@ func (_m *MockMembers) MemberList() members.MemberList {
 
 // MemberList indicates an expected call of MemberList
 func (_mr *MockMembersMockRecorder) MemberList() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "MemberList")
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "MemberList", reflect.TypeOf((*MockMembers)(nil).MemberList))
 }
 
 // Walk mocks base method
@@ -78,7 +90,7 @@ func (_m *MockMembers) Walk(_param0 func(members.PeerInfo) error) error {
 
 // Walk indicates an expected call of Walk
 func (_mr *MockMembersMockRecorder) Walk(arg0 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Walk", arg0)
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Walk", reflect.TypeOf((*MockMembers)(nil).Walk), arg0)
 }
 
 // MockMemberList is a mock of MemberList interface
@@ -113,7 +125,7 @@ func (_m *MockMemberList) LocalNode() members.Member {
 
 // LocalNode indicates an expected call of LocalNode
 func (_mr *MockMemberListMockRecorder) LocalNode() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "LocalNode")
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "LocalNode", reflect.TypeOf((*MockMemberList)(nil).LocalNode))
 }
 
 // Members mocks base method
@@ -125,7 +137,7 @@ func (_m *MockMemberList) Members() []members.Member {
 
 // Members indicates an expected call of Members
 func (_mr *MockMemberListMockRecorder) Members() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Members")
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Members", reflect.TypeOf((*MockMemberList)(nil).Members))
 }
 
 // NumMembers mocks base method
@@ -137,7 +149,7 @@ func (_m *MockMemberList) NumMembers() int {
 
 // NumMembers indicates an expected call of NumMembers
 func (_mr *MockMemberListMockRecorder) NumMembers() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "NumMembers")
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "NumMembers", reflect.TypeOf((*MockMemberList)(nil).NumMembers))
 }
 
 // MockMember is a mock of Member interface
@@ -172,17 +184,5 @@ func (_m *MockMember) Name() string {
 
 // Name indicates an expected call of Name
 func (_mr *MockMemberMockRecorder) Name() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Name")
-}
-
-// Status mocks base method
-func (_m *MockMember) Status() serf.MemberStatus {
-	ret := _m.ctrl.Call(_m, "Status")
-	ret0, _ := ret[0].(serf.MemberStatus)
-	return ret0
-}
-
-// Status indicates an expected call of Status
-func (_mr *MockMemberMockRecorder) Status() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Status")
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Name", reflect.TypeOf((*MockMember)(nil).Name))
 }

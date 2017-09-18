@@ -9,18 +9,18 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/pkg/errors"
-
 	"github.com/SimonRichardson/cluster/pkg/cluster"
 	"github.com/SimonRichardson/cluster/pkg/members"
 	"github.com/SimonRichardson/gexec"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
-	defaultMembers = "real"
+	defaultMembers             = "real"
+	defaultMetricsRegistration = true
 )
 
 func runIngestStore(args []string) error {
@@ -28,10 +28,11 @@ func runIngestStore(args []string) error {
 	var (
 		flagset = flag.NewFlagSet("ingeststore", flag.ExitOnError)
 
-		debug        = flagset.Bool("debug", false, "debug logging")
-		apiAddr      = flagset.String("api", defaultAPIAddr, "listen address for query API")
-		membersType  = flagset.String("members", defaultMembers, "real, nop")
-		clusterPeers = stringslice{}
+		debug               = flagset.Bool("debug", false, "debug logging")
+		apiAddr             = flagset.String("api", defaultAPIAddr, "listen address for query API")
+		membersType         = flagset.String("members", defaultMembers, "real, nop")
+		metricsRegistration = flagset.Bool("metrics.registration", defaultMetricsRegistration, "Registration of metrics on launch")
+		clusterPeers        = stringslice{}
 	)
 
 	flagset.Var(&clusterPeers, "peer", "cluster peer host:port (repeatable)")
@@ -60,6 +61,37 @@ func runIngestStore(args []string) error {
 		logger = log.NewLogfmtLogger(os.Stdout)
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 		logger = level.NewFilter(logger, logLevel)
+	}
+
+	// Instrumentation
+	connectedClients := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "cluster",
+		Name:      "connected_clients",
+		Help:      "Number of currently connected clients by modality.",
+	}, []string{"modality"})
+	writerBytes := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "cluster",
+		Name:      "writer_bytes_written_total",
+		Help:      "The total number of bytes written.",
+	})
+	writerRecords := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "cluster",
+		Name:      "writer_records_written_total",
+		Help:      "The total number of records written.",
+	})
+	apiDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "cluster",
+		Name:      "api_request_duration_seconds",
+		Help:      "API request duration in seconds.",
+		Buckets:   prometheus.DefBuckets,
+	}, []string{"method", "path", "status_code"})
+	if *metricsRegistration {
+		prometheus.MustRegister(
+			connectedClients,
+			writerBytes,
+			writerRecords,
+			apiDuration,
+		)
 	}
 
 	apiNetwork, apiAddress, _, _, err := parseAddr(*apiAddr, defaultAPIPort)
@@ -101,20 +133,25 @@ func runIngestStore(args []string) error {
 	if err != nil {
 		return err
 	}
-	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace: "oklog",
-		Name:      "cluster_size",
-		Help:      "Number of peers in the cluster from this node's perspective.",
-	}, func() float64 { return float64(peer.ClusterSize()) }))
+	if *metricsRegistration {
+		clusterSize := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Namespace: "cluster",
+			Name:      "cluster_size",
+			Help:      "Number of peers in the cluster from this node's perspective.",
+		}, func() float64 { return float64(peer.ClusterSize()) })
+		prometheus.MustRegister(clusterSize)
+	}
 
 	// Execution group.
 	var g gexec.Group
 	gexec.Block(g)
 	{
-		// Store manages and maintains the underlying dataStore.
+		cancel := make(chan struct{})
 		g.Add(func() error {
-			return nil
+			<-cancel
+			return peer.Leave()
 		}, func(error) {
+			close(cancel)
 		})
 	}
 	{

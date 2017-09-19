@@ -9,7 +9,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/trussle/snowy/pkg/uuid"
+	"github.com/SimonRichardson/cluster/pkg/uuid"
 )
 
 func TestMergeRecords(t *testing.T) {
@@ -82,9 +82,35 @@ func TestMergeRecords(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid id", func(t *testing.T) {
+		fn := func(b []byte) bool {
+			if len(b) == 0 {
+				return true
+			}
+
+			var (
+				enc = base64.StdEncoding.EncodeToString(b)
+				r   = strings.NewReader(enc)
+			)
+
+			w := writer{func(p []byte) (int, error) {
+				t.Fatal("failed if called")
+				return len(p), nil
+			}}
+
+			_, err := mergeRecords(w, r)
+			return err != nil
+		}
+
+		if err := quick.Check(fn, nil); err != nil {
+			t.Error(err)
+		}
+	})
+
+	// Manual tests
 	ids := make([]string, 10)
 	for k := range ids {
-		ids[k] = uuid.New().String()
+		ids[k] = uuid.MustNew().String()
 	}
 
 	testcases := []struct {
@@ -132,6 +158,52 @@ func TestMergeRecords(t *testing.T) {
 				fmt.Sprintf("%s Foo", ids[0]),
 				fmt.Sprintf("%s Bar", ids[1]),
 				fmt.Sprintf("%s Baz", ids[2]),
+			},
+		},
+		{
+			name: "deterministic collision",
+			input: [][]string{
+				{fmt.Sprintf("%s Foo", ids[0]), fmt.Sprintf("%s Bar", ids[1])},
+				{fmt.Sprintf("%s Baz", ids[0])},
+			},
+			output: []string{
+				fmt.Sprintf("%s Foo", ids[0]),
+				fmt.Sprintf("%s Bar", ids[1]),
+			},
+		},
+		{
+			name: "ids only",
+			input: [][]string{
+				{ids[0], ids[1], ids[2], ids[3]},
+				{ids[2], ids[4], ids[5], ids[7]},
+				{ids[6], ids[8]},
+				{},
+			},
+			output: []string{
+				ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[7], ids[6], ids[8],
+			},
+		},
+		{
+			name: "mixed content",
+			input: [][]string{
+				{fmt.Sprintf("%s A", ids[0]), ids[1], fmt.Sprintf("%s B", ids[2]), ids[3]},
+				{ids[2], ids[4], ids[5], ids[7]},
+				{},
+				{ids[6], fmt.Sprintf("%s C", ids[8])},
+			},
+			output: []string{
+				fmt.Sprintf("%s A", ids[0]), ids[1], fmt.Sprintf("%s B", ids[2]), ids[3], ids[4], ids[5], ids[7], ids[6], fmt.Sprintf("%s C", ids[8]),
+			},
+		},
+		{
+			name: "duplication of ids",
+			input: [][]string{
+				{fmt.Sprintf("%s A0", ids[0]), fmt.Sprintf("%s B0", ids[1]), fmt.Sprintf("%s C0", ids[2])},
+				{fmt.Sprintf("%s A1", ids[0]), fmt.Sprintf("%s B1", ids[1]), fmt.Sprintf("%s C1", ids[2])},
+				{fmt.Sprintf("%s A2", ids[0]), fmt.Sprintf("%s B2", ids[1]), fmt.Sprintf("%s C2", ids[2])},
+			},
+			output: []string{
+				fmt.Sprintf("%s A0", ids[0]), fmt.Sprintf("%s B0", ids[1]), fmt.Sprintf("%s C0", ids[2]),
 			},
 		},
 	}

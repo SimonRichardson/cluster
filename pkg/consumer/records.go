@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// mergeRecords will merge multiple readers into one
 func mergeRecords(w io.Writer, readers ...io.Reader) (n int64, err error) {
 	if len(readers) == 0 {
 		return 0, nil
@@ -21,56 +22,51 @@ func mergeRecords(w io.Writer, readers ...io.Reader) (n int64, err error) {
 			notnil = append(notnil, r)
 		}
 	}
-	readers = notnil
+	reader := io.MultiReader(notnil...)
 
 	// Initialize our state.
 	var (
-		scanner = make([]*bufio.Scanner, len(readers))
-		records = make([][]byte, len(readers))
-		ids     = make(map[uuid.UUID]int, len(readers))
+		records [][]byte
+		ids     = map[uuid.UUID]int{}
 	)
 
-	// Advance moves the next record from a reader into our state.
-	advance := func(i int) error {
-		if ok := scanner[i].Scan(); ok {
-			if records[i] = scanner[i].Bytes(); len(records[i]) < 0 {
-				return nil
+	// Initialize the scanner
+	scanner := bufio.NewScanner(reader)
+	scanner.Split(scanLinesPreserveNewline)
+
+	for {
+		if ok := scanner.Scan(); ok {
+			record := scanner.Bytes()
+			if len(record) == 0 {
+				continue
 			}
 
-			fields := bytes.Fields(records[i])
-			if len(fields) < 1 {
-				return errInvalidUUID{errors.Errorf("missing uuid")}
+			fields := bytes.Fields(record)
+			if len(fields) == 0 {
+				return 0, errInvalidUUID{errors.Errorf("missing uuid")}
 			}
 
 			id, err := uuid.ParseBytes(fields[0])
 			if err != nil {
-				return errInvalidUUID{errors.Errorf("invalid uuid")}
+				return 0, errInvalidUUID{errors.Errorf("invalid uuid")}
 			}
-			ids[id] = i
 
-		} else if err := scanner[i].Err(); err != nil && err != io.EOF {
-			return err
-		}
-		return nil
-	}
+			if _, ok := ids[id]; !ok {
+				records = append(records, record)
+				ids[id] = len(records) - 1
+			}
+			continue
 
-	// Initialize all of the scanners and their first record.
-	for i := 0; i < len(readers); i++ {
-		scanner[i] = bufio.NewScanner(readers[i])
-		scanner[i].Split(scanLinesPreserveNewline)
-		if err := advance(i); err != nil {
-			return n, err
+		} else if err := scanner.Err(); err != nil && err != io.EOF {
+			return 0, err
 		}
+
+		break
 	}
 
 	sw := sizedWriter{w, 0}
-	for k, v := range ids {
-		// if id already exists, skip it
-		if i, ok := ids[k]; ok && v != i {
-			continue
-		}
-
-		if _, err := sw.Write(records[v]); err != nil {
+	for _, v := range records {
+		if _, err := sw.Write(v); err != nil {
 			return n, err
 		}
 	}

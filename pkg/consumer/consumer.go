@@ -14,6 +14,7 @@ import (
 	"github.com/SimonRichardson/cluster/pkg/cluster"
 	"github.com/SimonRichardson/cluster/pkg/ingester"
 	"github.com/SimonRichardson/cluster/pkg/metrics"
+	"github.com/SimonRichardson/cluster/pkg/store"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 )
@@ -28,7 +29,7 @@ const (
 // batch.
 type Consumer struct {
 	mutex              sync.Mutex
-	peer               *cluster.Peer
+	peer               cluster.Peer
 	client             *http.Client
 	segmentTargetSize  int64
 	segmentTargetAge   time.Duration
@@ -47,7 +48,7 @@ type Consumer struct {
 
 // NewConsumer creates a consumer.
 func NewConsumer(
-	peer *cluster.Peer,
+	peer cluster.Peer,
 	segmentTargetSize int64,
 	segmentTargetAge time.Duration,
 	replicationFactor int,
@@ -151,6 +152,7 @@ func (c *Consumer) gather() stateFn {
 	if want, have := c.replicationFactor, len(storeInstances); have < want {
 		warn.Log("replication_factor", want, "available_peers", have, "err", "replication currently impossible")
 		time.Sleep(defaultWaitTime)
+
 		c.gatherErrors++
 		return c.gather
 	}
@@ -182,7 +184,8 @@ func (c *Consumer) gather() stateFn {
 	nextID := strings.TrimSpace(string(nextRespBody))
 	if nextResp.StatusCode == http.StatusNotFound {
 		// Normal, when the ingester has no more segments to give right now.
-		c.gatherErrors++ // after enough of these errors, we should replicate
+		// after enough of these errors, we should replicate
+		c.gatherErrors++
 		return c.gather
 	}
 	if nextResp.StatusCode != http.StatusOK {
@@ -203,13 +206,15 @@ func (c *Consumer) gather() stateFn {
 		// The simplest thing to do now is to fail everything.
 		warn.Log("ingester", ingestInstance, "during", ingester.APIPathRead, "err", err)
 		c.gatherErrors++
-		return c.fail // fail everything
+		// fail everything
+		return c.fail
 	}
 	defer readResp.Body.Close()
 	if readResp.StatusCode != http.StatusOK {
 		warn.Log("ingester", ingestInstance, "during", ingester.APIPathRead, "returned", readResp.Status)
 		c.gatherErrors++
-		return c.fail // fail everything, same as above
+		// fail everything, same as above
+		return c.fail
 	}
 
 	// Merge the segment into our active segment.
@@ -217,7 +222,8 @@ func (c *Consumer) gather() stateFn {
 	if _, err := mergeRecords(c.active, io.TeeReader(readResp.Body, &cw)); err != nil {
 		warn.Log("ingester", ingestInstance, "during", "mergeRecords", "err", err)
 		c.gatherErrors++
-		return c.fail // fail everything, same as above
+		// fail everything, same as above
+		return c.fail
 	}
 	if c.activeSince.IsZero() {
 		c.activeSince = time.Now()
@@ -226,15 +232,112 @@ func (c *Consumer) gather() stateFn {
 	// Repeat!
 	c.consumedSegments.Inc()
 	c.consumedBytes.Add(float64(cw.n))
+
 	return c.gather
 }
 
 func (c *Consumer) replicate() stateFn {
-	return nil
+	var (
+		base = log.With(c.logger, "state", "replicate")
+		warn = level.Warn(base)
+	)
+
+	// Replicate the segment to the cluster.
+	peers, err := c.peer.Current(cluster.PeerTypeStore)
+	if err != nil {
+		warn.Log("err", err)
+		return c.fail
+	}
+
+	var (
+		indices    = rand.Perm(len(peers))
+		replicated = 0
+	)
+	if want, have := c.replicationFactor, len(peers); have < want {
+		warn.Log("replication_factor", want, "available_peers", have, "err", "replication currently impossible")
+		return c.fail
+	}
+
+	for i := 0; i < len(indices) && replicated < c.replicationFactor; i++ {
+		var (
+			index    = indices[i]
+			target   = peers[index]
+			uri      = fmt.Sprintf("http://%s/store%s", target, store.APIPathReplicate)
+			bodyType = "application/binary"
+			body     = bytes.NewReader(c.active.Bytes())
+		)
+		resp, err := c.client.Post(uri, bodyType, body)
+		if err != nil {
+			warn.Log("target", target, "during", store.APIPathReplicate, "err", err)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			warn.Log("target", target, "during", store.APIPathReplicate, "got", resp.Status)
+			continue
+		}
+		replicated++
+	}
+
+	if replicated < c.replicationFactor {
+		warn.Log("err", "failed to fully replicate", "want", c.replicationFactor, "have", replicated)
+		return c.fail
+	}
+
+	// All good!
+	c.replicatedSegments.Inc()
+	c.replicatedBytes.Add(float64(c.active.Len()))
+
+	return c.commit
+}
+
+func (c *Consumer) commit() stateFn {
+	return c.resetVia("commit")
 }
 
 func (c *Consumer) fail() stateFn {
-	return nil
+	return c.resetVia("failed")
+}
+
+func (c *Consumer) resetVia(commitOrFailed string) stateFn {
+	var (
+		base = log.With(c.logger, "state", commitOrFailed)
+		warn = level.Warn(base)
+	)
+
+	// If commits fail, the segment may be re-replicated; that's OK.
+	// If fails fail, the segment will eventually time-out; that's also OK.
+	// So we have best-effort semantics, just log the error and move on.
+	var wg sync.WaitGroup
+	for instance, ids := range c.pending {
+		wg.Add(len(ids))
+		for _, id := range ids {
+			go func(instance, id string) {
+				defer wg.Done()
+				uri := fmt.Sprintf("http://%s/ingest/%s?id=%s", instance, commitOrFailed, id)
+				resp, err := c.client.Post(uri, "text/plain", nil)
+				if err != nil {
+					warn.Log("instance", instance, "during", "POST", "uri", uri, "err", err)
+					return
+				}
+				resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					warn.Log("instance", instance, "during", "POST", "uri", uri, "status", resp.Status)
+					return
+				}
+			}(instance, id)
+		}
+	}
+	wg.Wait()
+
+	// Reset various pending things.
+	c.gatherErrors = 0
+	c.pending = map[string][]string{}
+	c.active.Reset()
+	c.activeSince = time.Time{}
+
+	// Back to the beginning.
+	return c.gather
 }
 
 type countingWriter struct{ n int64 }

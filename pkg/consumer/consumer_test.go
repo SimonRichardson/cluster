@@ -2,8 +2,10 @@ package consumer
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +23,46 @@ import (
 func TestConsumer(t *testing.T) {
 	t.Parallel()
 
+	expectPeerType := func(p *clusterMocks.MockPeer,
+		res []string,
+		t members.PeerType,
+	) {
+		p.EXPECT().
+			Current(PeerType(t)).
+			Return(res, nil).Times(1)
+	}
+	expectClientGet := func(c *clientsMocks.MockClient,
+		r *clientsMocks.MockResponse,
+		u string,
+	) {
+		c.EXPECT().
+			Get(URL(u)).
+			Return(r, nil).Times(1)
+		r.EXPECT().
+			Close().
+			Return(nil)
+	}
+	expectClientGetBytes := func(c *clientsMocks.MockClient,
+		r *clientsMocks.MockResponse,
+		u string,
+		res []byte,
+	) {
+		expectClientGet(c, r, u)
+		r.EXPECT().
+			Bytes().
+			Return(res, nil)
+	}
+	expectClientGetReader := func(c *clientsMocks.MockClient,
+		r *clientsMocks.MockResponse,
+		u string,
+		res io.ReadCloser,
+	) {
+		expectClientGet(c, r, u)
+		r.EXPECT().
+			Reader().
+			Return(res)
+	}
+
 	t.Run("gather", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
@@ -35,40 +77,28 @@ func TestConsumer(t *testing.T) {
 			client   = clientsMocks.NewMockClient(ctrl)
 			response = clientsMocks.NewMockResponse(ctrl)
 
-			instance = "0.0.0.0:8080"
-			id       = uuid.MustNew().Bytes()
+			instance  = "0.0.0.0:8080"
+			instances = []string{instance}
+			id        = uuid.MustNew().Bytes()
 
 			input = fmt.Sprintf("%s %s", string(id), uuid.MustNew().String())
 		)
 
-		peer.EXPECT().
-			Current(PeerType(cluster.PeerTypeIngest)).
-			Return([]string{instance}, nil).
-			Times(1)
-		peer.EXPECT().
-			Current(PeerType(cluster.PeerTypeStore)).
-			Return([]string{instance}, nil).
-			Times(1)
-		client.EXPECT().
-			Get(URL(buildIngestNextIDPath(instance))).
-			Return(response, nil).
-			Times(1)
-		response.EXPECT().
-			Close().
-			Return(nil)
-		response.EXPECT().
-			Bytes().
-			Return(id, nil)
-		client.EXPECT().
-			Get(URL(buildIngestIDPath(instance, string(id)))).
-			Return(response, nil).
-			Times(1)
-		response.EXPECT().
-			Close().
-			Return(nil)
-		response.EXPECT().
-			Reader().
-			Return(ioutil.NopCloser(strings.NewReader(input)))
+		expectPeerType(peer, instances, cluster.PeerTypeIngest)
+		expectPeerType(peer, instances, cluster.PeerTypeStore)
+
+		expectClientGetBytes(
+			client,
+			response,
+			buildIngestNextIDPath(instance),
+			id,
+		)
+		expectClientGetReader(
+			client,
+			response,
+			buildIngestIDPath(instance, string(id)),
+			ioutil.NopCloser(strings.NewReader(input)),
+		)
 
 		consumedSegments.EXPECT().Inc()
 		consumedBytes.EXPECT().Add(float64(len(input)))
@@ -84,13 +114,27 @@ func TestConsumer(t *testing.T) {
 			log.NewNopLogger(),
 		)
 
-		c.guard(c.gather)
+		got := c.guard(c.gather)
+		if expected, actual := c.gather, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
 
 		want := []byte(input)
 		if expected, actual := want, c.active.Bytes(); !reflect.DeepEqual(expected, actual) {
 			t.Errorf("expected: %s, actual: %s", string(expected), string(actual))
 		}
+		if expected, actual := time.Now().Add(-time.Millisecond), c.activeSince; !actual.After(expected) {
+			t.Errorf("expected: %v, actual: %v", expected, actual)
+		}
 	})
+}
+
+func stateFnEqual(a, b stateFn) bool {
+	var (
+		x = runtime.FuncForPC(reflect.ValueOf(a).Pointer()).Name()
+		y = runtime.FuncForPC(reflect.ValueOf(b).Pointer()).Name()
+	)
+	return x == y
 }
 
 type peerTypeMatcher struct {

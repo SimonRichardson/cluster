@@ -42,6 +42,7 @@ type Consumer struct {
 	consumedBytes      metrics.Counter
 	replicatedSegments metrics.Counter
 	replicatedBytes    metrics.Counter
+	gatherWaitTime     time.Duration
 	logger             log.Logger
 }
 
@@ -72,6 +73,7 @@ func NewConsumer(
 		consumedBytes:      consumedBytes,
 		replicatedSegments: replicatedSegments,
 		replicatedBytes:    replicatedBytes,
+		gatherWaitTime:     defaultWaitTime,
 		logger:             logger,
 	}
 }
@@ -123,6 +125,8 @@ func (c *Consumer) gather() stateFn {
 	)
 	if err != nil {
 		warn.Log("err", err)
+		time.Sleep(c.gatherWaitTime)
+
 		return c.gather
 	}
 
@@ -153,7 +157,7 @@ func (c *Consumer) gather() stateFn {
 	}
 	if want, have := c.replicationFactor, len(storeInstances); have < want {
 		warn.Log("replication_factor", want, "available_peers", have, "err", "replication currently impossible")
-		time.Sleep(defaultWaitTime)
+		time.Sleep(c.gatherWaitTime)
 
 		c.gatherErrors++
 		return c.gather

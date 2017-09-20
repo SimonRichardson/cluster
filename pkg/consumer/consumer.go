@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/SimonRichardson/cluster/pkg/clients"
 	"github.com/SimonRichardson/cluster/pkg/cluster"
 	"github.com/SimonRichardson/cluster/pkg/ingester"
 	"github.com/SimonRichardson/cluster/pkg/metrics"
@@ -30,7 +29,7 @@ const (
 type Consumer struct {
 	mutex              sync.Mutex
 	peer               cluster.Peer
-	client             *http.Client
+	client             clients.Client
 	segmentTargetSize  int64
 	segmentTargetAge   time.Duration
 	replicationFactor  int
@@ -49,6 +48,7 @@ type Consumer struct {
 // NewConsumer creates a consumer.
 func NewConsumer(
 	peer cluster.Peer,
+	client clients.Client,
 	segmentTargetSize int64,
 	segmentTargetAge time.Duration,
 	replicationFactor int,
@@ -59,6 +59,7 @@ func NewConsumer(
 	return &Consumer{
 		mutex:              sync.Mutex{},
 		peer:               peer,
+		client:             client,
 		segmentTargetSize:  segmentTargetSize,
 		segmentTargetAge:   segmentTargetAge,
 		replicationFactor:  replicationFactor,
@@ -80,6 +81,7 @@ func NewConsumer(
 func (c *Consumer) Run() {
 	step := time.NewTicker(100 * time.Millisecond)
 	defer step.Stop()
+
 	state := c.gather
 	for {
 		select {
@@ -168,31 +170,23 @@ func (c *Consumer) gather() stateFn {
 
 	// Get a segment ID from a random ingester.
 	ingestInstance := ingestInstances[rand.Intn(len(ingestInstances))]
-	nextResp, err := c.client.Get(fmt.Sprintf("http://%s/ingest%s", ingestInstance, ingester.APIPathNext))
+	nextResp, err := c.client.Get(buildIngestNextIDPath(ingestInstance))
 	if err != nil {
+		// Normal, when the ingester has no more segments to give right now.
+		// after enough of these errors, we should replicate
 		warn.Log("ingester", ingestInstance, "during", ingester.APIPathNext, "err", err)
 		c.gatherErrors++
 		return c.gather
 	}
-	defer nextResp.Body.Close()
-	nextRespBody, err := ioutil.ReadAll(nextResp.Body)
+	defer nextResp.Close()
+
+	nextRespBody, err := nextResp.Bytes()
 	if err != nil {
 		warn.Log("ingester", ingestInstance, "during", ingester.APIPathNext, "err", err)
 		c.gatherErrors++
 		return c.gather
 	}
 	nextID := strings.TrimSpace(string(nextRespBody))
-	if nextResp.StatusCode == http.StatusNotFound {
-		// Normal, when the ingester has no more segments to give right now.
-		// after enough of these errors, we should replicate
-		c.gatherErrors++
-		return c.gather
-	}
-	if nextResp.StatusCode != http.StatusOK {
-		warn.Log("ingester", ingestInstance, "during", ingester.APIPathNext, "returned", nextResp.Status)
-		c.gatherErrors++
-		return c.gather
-	}
 
 	// Mark the segment ID as pending.
 	// From this point forward, we must either commit or fail the segment.
@@ -200,7 +194,7 @@ func (c *Consumer) gather() stateFn {
 	c.pending[ingestInstance] = append(c.pending[ingestInstance], nextID)
 
 	// Read the segment.
-	readResp, err := c.client.Get(fmt.Sprintf("http://%s/ingest%s?id=%s", ingestInstance, ingester.APIPathRead, nextID))
+	readResp, err := c.client.Get(buildIngestIDPath(ingestInstance, nextID))
 	if err != nil {
 		// Reading failed, so we can't possibly commit the segment.
 		// The simplest thing to do now is to fail everything.
@@ -209,17 +203,11 @@ func (c *Consumer) gather() stateFn {
 		// fail everything
 		return c.fail
 	}
-	defer readResp.Body.Close()
-	if readResp.StatusCode != http.StatusOK {
-		warn.Log("ingester", ingestInstance, "during", ingester.APIPathRead, "returned", readResp.Status)
-		c.gatherErrors++
-		// fail everything, same as above
-		return c.fail
-	}
+	defer readResp.Close()
 
 	// Merge the segment into our active segment.
 	var cw countingWriter
-	if _, err := mergeRecords(c.active, io.TeeReader(readResp.Body, &cw)); err != nil {
+	if _, err := mergeRecords(c.active, io.TeeReader(readResp.Reader(), &cw)); err != nil {
 		warn.Log("ingester", ingestInstance, "during", "mergeRecords", "err", err)
 		c.gatherErrors++
 		// fail everything, same as above
@@ -260,22 +248,16 @@ func (c *Consumer) replicate() stateFn {
 
 	for i := 0; i < len(indices) && replicated < c.replicationFactor; i++ {
 		var (
-			index    = indices[i]
-			target   = peers[index]
-			uri      = fmt.Sprintf("http://%s/store%s", target, store.APIPathReplicate)
-			bodyType = "application/binary"
-			body     = bytes.NewReader(c.active.Bytes())
+			index  = indices[i]
+			target = peers[index]
+			uri    = fmt.Sprintf("http://%s/store%s", target, store.APIPathReplicate)
 		)
-		resp, err := c.client.Post(uri, bodyType, body)
+		resp, err := c.client.Post(uri, c.active.Bytes())
 		if err != nil {
 			warn.Log("target", target, "during", store.APIPathReplicate, "err", err)
 			continue
 		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			warn.Log("target", target, "during", store.APIPathReplicate, "got", resp.Status)
-			continue
-		}
+		resp.Close()
 		replicated++
 	}
 
@@ -315,16 +297,12 @@ func (c *Consumer) resetVia(commitOrFailed string) stateFn {
 			go func(instance, id string) {
 				defer wg.Done()
 				uri := fmt.Sprintf("http://%s/ingest/%s?id=%s", instance, commitOrFailed, id)
-				resp, err := c.client.Post(uri, "text/plain", nil)
+				resp, err := c.client.Post(uri, nil)
 				if err != nil {
 					warn.Log("instance", instance, "during", "POST", "uri", uri, "err", err)
 					return
 				}
-				resp.Body.Close()
-				if resp.StatusCode != http.StatusOK {
-					warn.Log("instance", instance, "during", "POST", "uri", uri, "status", resp.Status)
-					return
-				}
+				resp.Close()
 			}(instance, id)
 		}
 	}
@@ -345,4 +323,12 @@ type countingWriter struct{ n int64 }
 func (cw *countingWriter) Write(p []byte) (int, error) {
 	cw.n += int64(len(p))
 	return len(p), nil
+}
+
+func buildIngestNextIDPath(instance string) string {
+	return fmt.Sprintf("http://%s/ingest%s", instance, ingester.APIPathNext)
+}
+
+func buildIngestIDPath(instance, id string) string {
+	return fmt.Sprintf("http://%s/ingest%s?id=%s", instance, ingester.APIPathRead, id)
 }

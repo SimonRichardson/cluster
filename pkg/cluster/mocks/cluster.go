@@ -67,6 +67,19 @@ func (_mr *MockPeerMockRecorder) Current(arg0 interface{}) *gomock.Call {
 	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Current", reflect.TypeOf((*MockPeer)(nil).Current), arg0)
 }
 
+// Join mocks base method
+func (_m *MockPeer) Join() (int, error) {
+	ret := _m.ctrl.Call(_m, "Join")
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Join indicates an expected call of Join
+func (_mr *MockPeerMockRecorder) Join() *gomock.Call {
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Join", reflect.TypeOf((*MockPeer)(nil).Join))
+}
+
 // Leave mocks base method
 func (_m *MockPeer) Leave() error {
 	ret := _m.ctrl.Call(_m, "Leave")

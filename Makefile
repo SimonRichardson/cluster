@@ -11,6 +11,10 @@ all:
 	go get github.com/Masterminds/glide
 	glide install --strip-vendor
 
+pkg/clients/mocks/client.go:
+	mockgen -package=mocks -destination=pkg/clients/mocks/client.go ${PATH_CLUSTER}/pkg/clients Client,Response
+	$(SED) 's/github.com\/SimonRichardson\/clients\/vendor\///g' ./pkg/clients/mocks/client.go
+
 pkg/cluster/mocks/cluster.go:
 	mockgen -package=mocks -destination=pkg/cluster/mocks/cluster.go ${PATH_CLUSTER}/pkg/cluster Peer
 	$(SED) 's/github.com\/SimonRichardson\/cluster\/vendor\///g' ./pkg/cluster/mocks/cluster.go
@@ -32,6 +36,7 @@ pkg/metrics/mocks/observer.go:
 
 .PHONY: build-mocks
 build-mocks: FORCE
+	$(MAKE) pkg/clients/mocks/client.go
 	$(MAKE) pkg/cluster/mocks/cluster.go
 	$(MAKE) pkg/ingester/mocks/queue.go
 	$(MAKE) pkg/members/mocks/members.go
@@ -40,6 +45,7 @@ build-mocks: FORCE
 
 .PHONY: clean-mocks
 clean-mocks: FORCE
+	rm -f pkg/clients/mocks/client.go
 	rm -f pkg/cluster/mocks/cluster.go
 	rm -f pkg/ingester/mocks/queue.go
 	rm -f pkg/members/mocks/members.go

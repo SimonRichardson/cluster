@@ -18,6 +18,7 @@ import (
 	"github.com/SimonRichardson/cluster/pkg/uuid"
 	"github.com/go-kit/kit/log"
 	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
 )
 
 func TestConsumer(t *testing.T) {
@@ -62,6 +63,157 @@ func TestConsumer(t *testing.T) {
 			Reader().
 			Return(res)
 	}
+
+	t.Run("gather with peer current failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+		)
+
+		peer.EXPECT().
+			Current(PeerType(cluster.PeerTypeIngest)).
+			Return(nil, errors.New("bad"))
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		got := c.guard(c.gather)
+		if expected, actual := c.gather, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+
+	t.Run("gather with gatherErrors and no activity", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+
+			instance  = "0.0.0.0:8080"
+			instances = []string{instance}
+		)
+
+		expectPeerType(peer, instances, cluster.PeerTypeIngest)
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		c.gatherErrors = 10
+
+		got := c.guard(c.gather)
+		if expected, actual := c.gather, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+
+	t.Run("gather with gatherErrors and some activity", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+
+			instance  = "0.0.0.0:8080"
+			instances = []string{instance}
+
+			id = uuid.MustNew().Bytes()
+
+			input = fmt.Sprintf("%s %s", string(id), uuid.MustNew().String())
+		)
+
+		expectPeerType(peer, instances, cluster.PeerTypeIngest)
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		c.gatherErrors = 10
+		c.active.WriteString(input)
+
+		got := c.guard(c.gather)
+		if expected, actual := c.replicate, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+
+	t.Run("gather with no instances", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+
+			instances = []string{}
+		)
+
+		expectPeerType(peer, instances, cluster.PeerTypeIngest)
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		got := c.guard(c.gather)
+		if expected, actual := c.gather, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
 
 	t.Run("gather", func(t *testing.T) {
 		ctrl := gomock.NewController(t)

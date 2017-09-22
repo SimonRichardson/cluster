@@ -299,13 +299,15 @@ func (c *Consumer) resetVia(commitOrFailed string) stateFn {
 		for _, id := range ids {
 			go func(instance, id string) {
 				defer wg.Done()
-				uri := fmt.Sprintf("http://%s/ingest/%s?id=%s", instance, commitOrFailed, id)
+
+				uri := buildIngestResetPath(instance, commitOrFailed, id)
 				resp, err := c.client.Post(uri, nil)
 				if err != nil {
 					warn.Log("instance", instance, "during", "POST", "uri", uri, "err", err)
 					return
 				}
 				resp.Close()
+
 			}(instance, id)
 		}
 	}
@@ -334,6 +336,10 @@ func buildIngestNextIDPath(instance string) string {
 
 func buildIngestIDPath(instance, id string) string {
 	return fmt.Sprintf("http://%s/ingest%s?id=%s", instance, ingester.APIPathRead, id)
+}
+
+func buildIngestResetPath(instance, reason, id string) string {
+	return fmt.Sprintf("http://%s/ingest/%s?id=%s", instance, reason, id)
 }
 
 func buildStorePath(instance string) string {

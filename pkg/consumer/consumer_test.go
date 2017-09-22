@@ -612,19 +612,6 @@ func TestConsumerGather(t *testing.T) {
 func TestConsumerReplicate(t *testing.T) {
 	t.Parallel()
 
-	expectClientPost := func(c *clientsMocks.MockClient,
-		r *clientsMocks.MockResponse,
-		u string,
-		b []byte,
-	) {
-		c.EXPECT().
-			Post(URL(u), b).
-			Return(r, nil).Times(1)
-		r.EXPECT().
-			Close().
-			Return(nil)
-	}
-
 	t.Run("replicate with peer current store failure", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
@@ -798,6 +785,103 @@ func TestConsumerReplicate(t *testing.T) {
 	})
 }
 
+func TestConsumerReset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reset with client failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+
+			instance = "0.0.0.0:8080"
+
+			id = uuid.MustNew().String()
+		)
+
+		client.EXPECT().
+			Post(URL(buildIngestResetPath(instance, "commit", id)), nil).
+			Return(nil, errors.New("bad")).Times(1)
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		c.pending[instance] = []string{id}
+
+		got := c.guard(c.commit)
+		if expected, actual := c.gather, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+
+	t.Run("reset", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client   = clientsMocks.NewMockClient(ctrl)
+			response = clientsMocks.NewMockResponse(ctrl)
+
+			instance = "0.0.0.0:8080"
+
+			id = uuid.MustNew().String()
+		)
+
+		expectClientPost(
+			client,
+			response,
+			buildIngestResetPath(instance, "commit", id),
+			nil,
+		)
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		c.pending[instance] = []string{id}
+
+		got := c.guard(c.commit)
+		if expected, actual := c.gather, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+
+		if expected, actual := 0, c.gatherErrors; expected != actual {
+			t.Errorf("expected: %d, actual: %d", expected, actual)
+		}
+		if expected, actual := 0, len(c.pending); expected != actual {
+			t.Errorf("expected: %d, actual: %d", expected, actual)
+		}
+	})
+}
+
 func stateFnEqual(a, b stateFn) bool {
 	var (
 		x = runtime.FuncForPC(reflect.ValueOf(a).Pointer()).Name()
@@ -813,6 +897,19 @@ func expectPeerType(p *clusterMocks.MockPeer,
 	p.EXPECT().
 		Current(PeerType(t)).
 		Return(res, nil).Times(1)
+}
+
+func expectClientPost(c *clientsMocks.MockClient,
+	r *clientsMocks.MockResponse,
+	u string,
+	b []byte,
+) {
+	c.EXPECT().
+		Post(URL(u), b).
+		Return(r, nil).Times(1)
+	r.EXPECT().
+		Close().
+		Return(nil)
 }
 
 type peerTypeMatcher struct {

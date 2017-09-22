@@ -1,6 +1,7 @@
 package consumer
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -21,17 +22,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-func TestConsumer(t *testing.T) {
+func TestConsumerGather(t *testing.T) {
 	t.Parallel()
 
-	expectPeerType := func(p *clusterMocks.MockPeer,
-		res []string,
-		t members.PeerType,
-	) {
-		p.EXPECT().
-			Current(PeerType(t)).
-			Return(res, nil).Times(1)
-	}
 	expectClientGet := func(c *clientsMocks.MockClient,
 		r *clientsMocks.MockResponse,
 		u string,
@@ -616,12 +609,210 @@ func TestConsumer(t *testing.T) {
 	})
 }
 
+func TestConsumerReplicate(t *testing.T) {
+	t.Parallel()
+
+	expectClientPost := func(c *clientsMocks.MockClient,
+		r *clientsMocks.MockResponse,
+		u string,
+		b []byte,
+	) {
+		c.EXPECT().
+			Post(URL(u), b).
+			Return(r, nil).Times(1)
+		r.EXPECT().
+			Close().
+			Return(nil)
+	}
+
+	t.Run("replicate with peer current store failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+		)
+
+		peer.EXPECT().
+			Current(PeerType(cluster.PeerTypeStore)).
+			Return(nil, errors.New("bad"))
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		got := c.guard(c.replicate)
+		if expected, actual := c.fail, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+
+	t.Run("replicate with replication failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+
+			instance  = "0.0.0.0:8080"
+			instances = []string{instance}
+		)
+
+		expectPeerType(peer, instances, cluster.PeerTypeStore)
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			10,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		got := c.guard(c.replicate)
+		if expected, actual := c.fail, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+
+	t.Run("replicate with client post failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client = clientsMocks.NewMockClient(ctrl)
+
+			instance  = "0.0.0.0:8080"
+			instances = []string{instance}
+
+			id    = uuid.MustNew().Bytes()
+			input = fmt.Sprintf("%s %s", string(id), uuid.MustNew().String())
+
+			b = bytes.NewBufferString(input)
+		)
+
+		expectPeerType(peer, instances, cluster.PeerTypeStore)
+
+		client.EXPECT().
+			Post(URL(buildStorePath(instance)), b.Bytes()).
+			Return(nil, errors.New("bad")).Times(1)
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		c.active = b
+
+		got := c.guard(c.replicate)
+		if expected, actual := c.fail, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+
+	t.Run("replicate", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		var (
+			peer               = clusterMocks.NewMockPeer(ctrl)
+			consumedSegments   = metricMocks.NewMockCounter(ctrl)
+			consumedBytes      = metricMocks.NewMockCounter(ctrl)
+			replicatedSegments = metricMocks.NewMockCounter(ctrl)
+			replicatedBytes    = metricMocks.NewMockCounter(ctrl)
+
+			client   = clientsMocks.NewMockClient(ctrl)
+			response = clientsMocks.NewMockResponse(ctrl)
+
+			instance  = "0.0.0.0:8080"
+			instances = []string{instance}
+
+			id    = uuid.MustNew().Bytes()
+			input = fmt.Sprintf("%s %s", string(id), uuid.MustNew().String())
+
+			b = bytes.NewBufferString(input)
+		)
+
+		expectPeerType(peer, instances, cluster.PeerTypeStore)
+
+		expectClientPost(
+			client,
+			response,
+			buildStorePath(instance),
+			b.Bytes(),
+		)
+
+		replicatedSegments.EXPECT().Inc()
+		replicatedBytes.EXPECT().Add(float64(len(input)))
+
+		c := NewConsumer(
+			peer,
+			client,
+			100,
+			time.Minute,
+			1,
+			consumedSegments, consumedBytes,
+			replicatedSegments, replicatedBytes,
+			log.NewNopLogger(),
+		)
+
+		c.active = b
+
+		got := c.guard(c.replicate)
+		if expected, actual := c.commit, got; !stateFnEqual(expected, actual) {
+			t.Errorf("expected: %T, actual: %T", expected, actual)
+		}
+	})
+}
+
 func stateFnEqual(a, b stateFn) bool {
 	var (
 		x = runtime.FuncForPC(reflect.ValueOf(a).Pointer()).Name()
 		y = runtime.FuncForPC(reflect.ValueOf(b).Pointer()).Name()
 	)
 	return x == y
+}
+
+func expectPeerType(p *clusterMocks.MockPeer,
+	res []string,
+	t members.PeerType,
+) {
+	p.EXPECT().
+		Current(PeerType(t)).
+		Return(res, nil).Times(1)
 }
 
 type peerTypeMatcher struct {

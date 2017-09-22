@@ -6,8 +6,8 @@ ifeq ($(UNAME_S),Darwin)
 	SED += '' --
 endif
 
-.PHONY: all
-all:
+.PHONY: install
+install:
 	go get github.com/Masterminds/glide
 	glide install --strip-vendor
 

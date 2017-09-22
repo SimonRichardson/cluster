@@ -254,9 +254,8 @@ func (c *Consumer) replicate() stateFn {
 		var (
 			index  = indices[i]
 			target = peers[index]
-			uri    = fmt.Sprintf("http://%s/store%s", target, store.APIPathReplicate)
 		)
-		resp, err := c.client.Post(uri, c.active.Bytes())
+		resp, err := c.client.Post(buildStorePath(target), c.active.Bytes())
 		if err != nil {
 			warn.Log("target", target, "during", store.APIPathReplicate, "err", err)
 			continue
@@ -335,4 +334,8 @@ func buildIngestNextIDPath(instance string) string {
 
 func buildIngestIDPath(instance, id string) string {
 	return fmt.Sprintf("http://%s/ingest%s?id=%s", instance, ingester.APIPathRead, id)
+}
+
+func buildStorePath(instance string) string {
+	return fmt.Sprintf("http://%s/store%s", instance, store.APIPathReplicate)
 }

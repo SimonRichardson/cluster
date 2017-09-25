@@ -4,6 +4,7 @@
 package mocks
 
 import (
+	cluster "github.com/SimonRichardson/cluster/pkg/cluster"
 	members "github.com/SimonRichardson/cluster/pkg/members"
 	gomock "github.com/golang/mock/gomock"
 	reflect "reflect"
@@ -90,6 +91,18 @@ func (_m *MockPeer) Leave() error {
 // Leave indicates an expected call of Leave
 func (_mr *MockPeerMockRecorder) Leave() *gomock.Call {
 	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Leave", reflect.TypeOf((*MockPeer)(nil).Leave))
+}
+
+// Listen mocks base method
+func (_m *MockPeer) Listen(_param0 func(cluster.Reason)) error {
+	ret := _m.ctrl.Call(_m, "Listen", _param0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Listen indicates an expected call of Listen
+func (_mr *MockPeerMockRecorder) Listen(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCallWithMethodType(_mr.mock, "Listen", reflect.TypeOf((*MockPeer)(nil).Listen), arg0)
 }
 
 // Name mocks base method

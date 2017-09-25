@@ -38,9 +38,10 @@ func ParsePeerType(t string) (members.PeerType, error) {
 
 // peer represents the node with in the cluster.
 type peer struct {
-	members members.Members
-	stop    chan chan struct{}
-	logger  log.Logger
+	members  members.Members
+	stop     chan chan struct{}
+	callback func(Reason)
+	logger   log.Logger
 }
 
 // NewPeer creates or joins a cluster with the existing peers.
@@ -53,7 +54,10 @@ func NewPeer(
 	return &peer{
 		members: members,
 		stop:    make(chan chan struct{}),
-		logger:  logger,
+		callback: func(Reason) {
+			level.Warn(logger).Log("reason", "alone")
+		},
+		logger: logger,
 	}
 }
 
@@ -65,8 +69,9 @@ func (p *peer) run() {
 	for {
 		select {
 		case <-ticker.C:
+			// Notify the callback if below a threshold.
 			if num := members.NumMembers(); num <= defaultLowMembersThreshold {
-				level.Warn(p.logger).Log("num_members", num, "reason", "alone")
+				p.callback(ReasonAlone)
 			}
 
 		case c := <-p.stop:
@@ -135,6 +140,11 @@ func (p *peer) Current(peerType members.PeerType) (res []string, err error) {
 		return nil
 	})
 	return
+}
+
+func (p *peer) Listen(fn func(Reason)) error {
+	p.callback = fn
+	return nil
 }
 
 func memberNames(m []members.Member) []string {

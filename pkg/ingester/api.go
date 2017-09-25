@@ -133,11 +133,13 @@ func (a *API) loop() {
 // making it available for consumption again.
 func (a *API) clean(now time.Time) {
 	for id, s := range a.pending {
+
 		if now.After(s.deadline) {
 			if err := s.segment.Failed(); err != nil {
 				panic(err)
 			}
 			delete(a.pending, id)
+
 			a.failedSegments.Inc()
 		}
 	}

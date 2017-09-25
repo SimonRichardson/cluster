@@ -2,6 +2,14 @@ package cluster
 
 import "github.com/SimonRichardson/cluster/pkg/members"
 
+// Reason defines a type of reason a peer will notify the callback
+type Reason string
+
+const (
+	// ReasonAlone represents a peer that is alone and an action is required.
+	ReasonAlone Reason = "alone"
+)
+
 // Peer represents the node with in the cluster.
 type Peer interface {
 
@@ -24,6 +32,10 @@ type Peer interface {
 
 	// Current API host:ports for the given type of node.
 	Current(members.PeerType) ([]string, error)
+
+	// Listen registers a callback for potential issues with the peer. For example
+	// if the peer is on it's own.
+	Listen(func(Reason)) error
 
 	// Close and shutdown the peer
 	Close()

@@ -9,6 +9,12 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	defaultAccept      = "text/plain"
+	defaultContentType = "application/octet-stream"
+	defaultUserAgent   = "cluster (go-client)"
+)
+
 type httpClient struct {
 	client *http.Client
 }
@@ -19,7 +25,15 @@ func NewHTTPClient(client *http.Client) Client {
 }
 
 func (c *httpClient) Get(u string) (Response, error) {
-	resp, err := c.client.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set(httpHeaderUserAgent, defaultUserAgent)
+	req.Header.Set(httpHeaderAccept, defaultAccept)
+
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +44,7 @@ func (c *httpClient) Get(u string) (Response, error) {
 }
 
 func (c *httpClient) Post(u string, b []byte) (Response, error) {
-	resp, err := c.client.Post(u, "application/octet-stream", bytes.NewReader(b))
+	resp, err := c.client.Post(u, defaultContentType, bytes.NewReader(b))
 	if err != nil {
 		return nil, err
 	}
@@ -56,3 +70,9 @@ func (h *httpClientResponse) Reader() io.ReadCloser {
 func (h *httpClientResponse) Close() error {
 	return h.resp.Body.Close()
 }
+
+const (
+	httpHeaderAccept      = "Accept"
+	httpHeaderContentType = "Content-Type"
+	httpHeaderUserAgent   = "User-Agent"
+)

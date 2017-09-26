@@ -1,4 +1,4 @@
-package ingester
+package queue
 
 import "io"
 
@@ -32,30 +32,4 @@ type ReadSegment interface {
 
 	// Size gets the size of the read segment.
 	Size() int64
-}
-
-type notFound interface {
-	NotFound() bool
-}
-
-type errNotFound struct {
-	err error
-}
-
-func (e errNotFound) Error() string {
-	return e.err.Error()
-}
-
-func (e errNotFound) NotFound() bool {
-	return true
-}
-
-// ErrNotFound tests to see if the error passed is a not found error or not.
-func ErrNotFound(err error) bool {
-	if err != nil {
-		if _, ok := err.(notFound); ok {
-			return true
-		}
-	}
-	return false
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/SimonRichardson/cluster/pkg/metrics"
+	"github.com/SimonRichardson/cluster/pkg/queue"
 	"github.com/SimonRichardson/cluster/pkg/uuid"
 )
 
@@ -29,7 +30,7 @@ const (
 
 // API serves the ingest API.
 type API struct {
-	queue                             Queue
+	queue                             queue.Queue
 	timeout                           time.Duration
 	pending                           map[string]pendingSegment
 	action                            chan func()
@@ -41,14 +42,14 @@ type API struct {
 }
 
 type pendingSegment struct {
-	segment  ReadSegment
+	segment  queue.ReadSegment
 	deadline time.Time
 	reading  bool
 }
 
 // NewAPI returns a usable ingest API.
 func NewAPI(
-	queue Queue,
+	queue queue.Queue,
 	pendingSegmentTimeout time.Duration,
 	clients metrics.Gauge,
 	failedSegments, committedSegments, committedBytes metrics.Counter,
@@ -153,7 +154,7 @@ func (a *API) handleNext(w http.ResponseWriter, r *http.Request) {
 	)
 	a.action <- func() {
 		s, err := a.queue.Dequeue()
-		if ErrNotFound(err) {
+		if queue.ErrNoSegmentsAvailable(err) {
 			close(notFoundError)
 			return
 		}
@@ -184,7 +185,7 @@ func (a *API) handleNext(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleRead(w http.ResponseWriter, r *http.Request) {
 	var (
-		segment         = make(chan ReadSegment)
+		segment         = make(chan queue.ReadSegment)
 		notFoundError   = make(chan struct{})
 		concurrentError = make(chan struct{})
 	)
@@ -307,4 +308,30 @@ type interceptingWriter struct {
 func (iw *interceptingWriter) WriteHeader(code int) {
 	iw.code = code
 	iw.ResponseWriter.WriteHeader(code)
+}
+
+type notFound interface {
+	NotFound() bool
+}
+
+type errNotFound struct {
+	err error
+}
+
+func (e errNotFound) Error() string {
+	return e.err.Error()
+}
+
+func (e errNotFound) NotFound() bool {
+	return true
+}
+
+// ErrNotFound tests to see if the error passed is a not found error or not.
+func ErrNotFound(err error) bool {
+	if err != nil {
+		if _, ok := err.(notFound); ok {
+			return true
+		}
+	}
+	return false
 }

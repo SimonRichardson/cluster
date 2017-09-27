@@ -150,6 +150,10 @@ func (w realWriteSegment) Delete() error {
 	return w.fs.Remove(w.f.Name())
 }
 
+func (w realWriteSegment) Size() int64 {
+	return w.f.Size()
+}
+
 type realReadSegment struct {
 	fs fs.Filesystem
 	f  fs.File

@@ -16,6 +16,9 @@ type WriteSegment interface {
 
 	// Delete the written segment or fails with an error
 	Delete() error
+
+	// Size gets the size of the read segment.
+	Size() int64
 }
 
 // ReadSegment is a segment that can be read from. Once read, it may be

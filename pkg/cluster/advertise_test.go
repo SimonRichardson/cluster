@@ -1,8 +1,17 @@
 package cluster
 
-import "testing"
+import (
+	"testing"
+
+	sockaddr "github.com/hashicorp/go-sockaddr"
+)
 
 func TestCalculateAdvertiseAddr(t *testing.T) {
+	privateIP, err := sockaddr.GetPrivateIP()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for _, testcase := range []struct {
 		name          string
 		bindAddr      string
@@ -20,6 +29,9 @@ func TestCalculateAdvertiseAddr(t *testing.T) {
 		},
 		{"Zeroes bind private advertise",
 			"0.0.0.0", "172.16.1.9", "172.16.1.9",
+		},
+		{"Zeroes bind private ip",
+			"0.0.0.0", "", privateIP,
 		},
 		{"Public bind private advertise",
 			"188.177.166.155", "10.11.12.13", "10.11.12.13",
